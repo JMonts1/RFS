@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Registro Fiscal SAT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .popup-content {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 90%;
+            border: 2px solid;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .field-badge {
+            background: #2d3748;
+            color: #a0aec0;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .field-badge:hover {
+            background: #4a5568;
+            color: white;
+        }
+
+        .field-badge.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .search-box {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            width: 100%;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .sort-header {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .sort-header:hover {
+            background: #4a5568;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 min-h-screen text-white p-4">
+
+    <input id="qr-input" type="text" autofocus class="opacity-0 absolute" />
+
+    <div id="popup" class="popup-overlay">
+        <div id="popup-content" class="popup-content text-center">
+            <i id="popup-icon" class="text-6xl mb-4"></i>
+            <h2 id="popup-title" class="text-2xl font-bold mb-2"></h2>
+            <p id="popup-message" class="text-gray-300 mb-4"></p>
+            <p id="popup-detail" class="text-sm text-gray-400 mb-4"></p>
+            <button onclick="cerrarPopup()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg transition">
+                Aceptar
+            </button>
+        </div>
+    </div>
+
+    <h1 class="text-3xl font-bold text-blue-400 mb-4">
+        REGISTRO FISCAL SAT
+    </h1>
+
+    <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        <!-- Panel izquierdo -->
+        <div>
+            <div id="reader"></div>
+
+            <div class="mt-4">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    <input type="text" id="global-search" placeholder="Buscar por marca, folio o productor..."
+                        class="search-box pl-10">
+                </div>
+                <p class="text-xs text-gray-400 mt-1">
+                    <i class="fas fa-info-circle"></i> Búsqueda en múltiples campos
+                </p>
+            </div>
+
+            <div class="mt-4 bg-slate-800 p-3 rounded-lg">
+                <h3 class="text-sm font-semibold mb-2 flex items-center">
+                    <i class="fas fa-filter mr-2"></i> Filtros activos
+                </h3>
+                <div class="mb-3">
+                    <p class="text-xs text-gray-400 mb-1">Tipo de marbete:</p>
+                    <div class="flex flex-wrap gap-1">
+                        <span class="field-badge" onclick="filtrarPorTipo('todos')">Todos</span>
+                        <span class="field-badge" onclick="filtrarPorTipo('Nacional')">Nacional</span>
+                        <span class="field-badge" onclick="filtrarPorTipo('Internacional')">Internacional</span>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 mb-1">Ordenar por:</p>
+                    <select id="sort-select" class="w-full bg-slate-700 text-white text-sm p-2 rounded"
+                        onchange="cambiarOrden()">
+                        <option value="marca-asc">Marca (A-Z)</option>
+                        <option value="marca-desc">Marca (Z-A)</option>
+                        <option value="productor-asc">Productor (A-Z)</option>
+                        <option value="productor-desc">Productor (Z-A)</option>
+                        <option value="fecha-asc">Fecha (más antiguo)</option>
+                        <option value="fecha-desc">Fecha (más reciente)</option>
+                        <option value="alcohol-asc">Alcohol (menor a mayor)</option>
+                        <option value="alcohol-desc">Alcohol (mayor a menor)</option>
+                        <option value="folio-asc">Folio (A-Z)</option>
+                        <option value="folio-desc">Folio (Z-A)</option>
+                        <option value="tipo-asc">Tipo producto (A-Z)</option>
+                        <option value="tipo-desc">Tipo producto (Z-A)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="limpiarBD()" class="w-full bg-red-600 hover:bg-red-700 mt-3 py-2 rounded transition">
+                <i class="fas fa-trash mr-2"></i> Limpiar BD
+            </button>
+
+            <button id="download-btn" class="w-full bg-green-600 hover:bg-green-700 mt-3 py-2 rounded transition">
+                <i class="fas fa-download mr-2"></i> Descargar Excel
+            </button>
+        </div>
+
+        <!-- Tabla -->
+        <div class="xl:col-span-3 overflow-x-auto bg-slate-800 rounded-lg p-2">
+            <div class="mb-2 flex justify-between items-center">
+                <span class="text-sm text-gray-400">
+                    <i class="fas fa-database mr-1"></i> <span id="total-registros">0</span> registros
+                </span>
+                <span class="text-sm text-gray-400">
+                    <i class="fas fa-filter mr-1"></i> <span id="filtros-activos">Sin filtros</span>
+                </span>
+            </div>
+
+            <table class="w-full text-xs border border-slate-700">
+                <thead class="bg-slate-700">
+                    <tr>
+                        <th class="p-2 sort-header" onclick="ordenarPor('tipo_marbete')">Tipo <i
+                                class="fas fa-sort ml-1"></i></th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('folio')">Folio <i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('fecha_elaboracion')">Fecha <i
+                                class="fas fa-sort ml-1"></i></th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('marca')">Marca <i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('tipo_producto')">Tipo <i
+                                class="fas fa-sort ml-1"></i></th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('alcohol')">Alcohol <i
+                                class="fas fa-sort ml-1"></i></th>
+                        <th class="p-2">Capacidad</th>
+                        <th class="p-2">Origen</th>
+                        <th class="p-2 sort-header" onclick="ordenarPor('productor')">Productor <i
+                                class="fas fa-sort ml-1"></i></th>
+                        <th class="p-2">RFC</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Variables globales
+        let records = [];
+        let filteredRecords = [];
+        let currentFilter = {
+            tipo: 'todos',
+            busqueda: '',
+            sortBy: 'marca-asc'
+        };
+
+        // Funciones de UI
+        function mostrarPopup(tipo, titulo, mensaje, detalle = '') {
+            const popup = document.getElementById('popup');
+            const content = document.getElementById('popup-content');
+            const icon = document.getElementById('popup-icon');
+            const title = document.getElementById('popup-title');
+            const message = document.getElementById('popup-message');
+            const detail = document.getElementById('popup-detail');
+
+            switch (tipo) {
+                case 'success':
+                    icon.className = 'fas fa-check-circle text-6xl mb-4 text-green-500';
+                    content.style.borderColor = '#10b981';
+                    break;
+                case 'error':
+                    icon.className = 'fas fa-times-circle text-6xl mb-4 text-red-500';
+                    content.style.borderColor = '#ef4444';
+                    break;
+                case 'warning':
+                    icon.className = 'fas fa-exclamation-triangle text-6xl mb-4 text-yellow-500';
+                    content.style.borderColor = '#f59e0b';
+                    break;
+                case 'info':
+                    icon.className = 'fas fa-info-circle text-6xl mb-4 text-blue-500';
+                    content.style.borderColor = '#3b82f6';
+                    break;
+            }
+
+            title.textContent = titulo;
+            message.textContent = mensaje;
+            detail.textContent = detalle;
+            popup.style.display = 'flex';
+        }
+
+        function cerrarPopup() {
+            document.getElementById('popup').style.display = 'none';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') cerrarPopup();
+        });
+
+        function busquedaGlobal(texto) {
+            currentFilter.busqueda = texto.toLowerCase().trim();
+            aplicarFiltros();
+        }
+
+        function filtrarPorTipo(tipo) {
+            currentFilter.tipo = tipo;
+            document.querySelectorAll('.field-badge').forEach(b => b.classList.remove('active', 'bg-blue-600', 'text-white'));
+            if (tipo === 'todos') {
+                document.querySelectorAll('.field-badge')[0].classList.add('active', 'bg-blue-600', 'text-white');
+            } else if (tipo === 'Nacional') {
+                document.querySelectorAll('.field-badge')[1].classList.add('active', 'bg-blue-600', 'text-white');
+            } else if (tipo === 'Internacional') {
+                document.querySelectorAll('.field-badge')[2].classList.add('active', 'bg-blue-600', 'text-white');
+            }
+            aplicarFiltros();
+        }
+
+        function cambiarOrden() {
+            currentFilter.sortBy = document.getElementById('sort-select').value;
+            aplicarFiltros();
+        }
+
+        function ordenarPor(columna) {
+            const select = document.getElementById('sort-select');
+            const valorActual = select.value;
+            if (valorActual === `${columna}-asc`) {
+                select.value = `${columna}-desc`;
+            } else {
+                select.value = `${columna}-asc`;
+            }
+            cambiarOrden();
+        }
+
+        function aplicarFiltros() {
+            filteredRecords = records.filter(record => {
+                // Filtro por tipo (usa palabras clave)
+                if (currentFilter.tipo !== 'todos') {
+                    const tipoMap = {
+                        'Nacional': ['Nacional'],
+                        'Internacional': ['Importación', 'Internacional']
+                    };
+                    const keywords = tipoMap[currentFilter.tipo];
+                    if (!keywords.some(k => record.tipo_marbete && record.tipo_marbete.includes(k))) {
+                        return false;
+                    }
+                }
+
+                // Búsqueda global
+                if (currentFilter.busqueda) {
+                    const searchableFields = [
+                        (record.marca || '').toLowerCase(),
+                        (record.folio || '').toLowerCase(),
+                        (record.productor || '').toLowerCase()
+                    ];
+                    const match = searchableFields.some(field =>
+                        field.includes(currentFilter.busqueda)
+                    );
+                    if (!match) return false;
+                }
+
+                return true;
+            });
+
+            // Funcion de ordenamiento
+            const [campo, direccion] = currentFilter.sortBy.split('-');
+            filteredRecords.sort((a, b) => {
+                let valA = a[campo] || '';
+                let valB = b[campo] || '';
+
+                if (campo === 'alcohol') {
+                    valA = parseFloat(valA) || 0;
+                    valB = parseFloat(valB) || 0;
+                }
+                else if (campo === 'fecha_elaboracion') {
+                    if (valA && valB) {
+                        const [dA, mA, yA] = valA.split('-');
+                        const [dB, mB, yB] = valB.split('-');
+                        valA = new Date(yA, mA - 1, dA).getTime() || 0;
+                        valB = new Date(yB, mB - 1, dB).getTime() || 0;
+                    } else {
+                        valA = valA ? 1 : 0;
+                        valB = valB ? 1 : 0;
+                    }
+                }
+                else {
+                    valA = valA.toString().toLowerCase();
+                    valB = valB.toString().toLowerCase();
+                }
+
+                if (direccion === 'asc') {
+                    return valA > valB ? 1 : -1;
+                } else {
+                    return valA < valB ? 1 : -1;
+                }
+            });
+
+            // Actualizar indicadores y renderizar tabla
+            document.getElementById('total-registros').textContent = filteredRecords.length;
+            let filtrosTexto = [];
+            if (currentFilter.tipo !== 'todos') filtrosTexto.push(`Tipo: ${currentFilter.tipo}`);
+            if (currentFilter.busqueda) filtrosTexto.push(`Búsqueda: "${currentFilter.busqueda}"`);
+            document.getElementById('filtros-activos').textContent =
+                filtrosTexto.length ? filtrosTexto.join(' • ') : 'Sin filtros';
+
+            render();
+        }
+
+        function render() {
+            const tbody = document.getElementById("table-body");
+            tbody.innerHTML = "";
+            if (filteredRecords.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-8 text-gray-400"><i class="fas fa-search text-4xl mb-2"></i><br>No se encontraron registros</td></tr>`;
+                return;
+            }
+            filteredRecords.forEach(r => {
+                const tr = document.createElement("tr");
+                tr.className = "border-t border-slate-700 hover:bg-slate-700/50 transition";
+                tr.innerHTML = `
+                    <td class="p-2">${r.tipo_marbete || '-'}</td>
+                    <td class="p-2 font-mono">${r.folio || '-'}</td>
+                    <td class="p-2">${r.fecha_elaboracion || '-'}</td>
+                    <td class="p-2 font-medium">${r.marca || '-'}</td>
+                    <td class="p-2">${r.tipo_producto || '-'}</td>
+                    <td class="p-2">${r.alcohol || '-'}</td>
+                    <td class="p-2">${r.capacidad || '-'}</td>
+                    <td class="p-2">${r.origen || '-'}</td>
+                    <td class="p-2">${r.productor || '-'}</td>
+                    <td class="p-2 font-mono">${r.rfc || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Funciones principales
+        async function cargarDesdeBD() {
+            try {
+                console.log("Cargando registros...");
+                const r = await fetch("http://127.0.0.1:5000/registros");
+                if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+                records = await r.json();
+                console.log("Registros cargados:", records);
+                filteredRecords = [...records];
+                aplicarFiltros();
+            } catch (error) {
+                console.error("Error cargando registros:", error);
+                mostrarPopup('error', 'Error de conexión', 'No se pudo conectar con el servidor. ¿El servidor está corriendo en http://127.0.0.1:5000?');
+            }
+        }
+
+        function normalizarQR(raw) {
+            if (typeof raw !== "string") return "";
+            let qr = raw.trim();
+            console.log("Normalizando raw:", qr);
+            qr = qr
+                .replace(/Ñ/g, ":")
+                .replace(/¿/g, "=")
+                .replace(/-/g, "/")
+                .replace(/_/g, "?");
+            console.log("Después de reemplazos:", qr);
+            if (!qr.startsWith("https://")) {
+                if (qr.startsWith("https:")) {
+                    qr = qr.replace("https:", "https://");
+                } else {
+                    qr = "https://" + qr;
+                }
+            }
+            if (qr.includes(".jsf?")) {
+                const partes = qr.split(".jsf?");
+                const base = partes[0] + ".jsf";
+                let params = partes[1].replace(/\/D/g, "&D");
+                qr = base + "?" + params;
+                console.log("Después de reconstruir parámetros:", qr);
+            }
+            return qr;
+        }
+
+        async function consultarSAT(qr) {
+            if (!qr.startsWith("https://siat.sat.gob.mx")) {
+                console.warn("QR no válido (no empieza con SAT):", qr);
+                mostrarPopup('warning', 'QR Inválido', 'El código QR no corresponde al SAT. Verifique que sea un marbete válido.');
+                return null;
+            }
+            try {
+                console.log("Enviando al servidor:", qr);
+                const r = await fetch("http://127.0.0.1:5000/sat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ qr })
+                });
+                const data = await r.json();
+                console.log("Respuesta del servidor:", r.status, data);
+                if (r.status === 409) {
+                    mostrarPopup('warning', 'Registro Duplicado', 'Este marbete ya ha sido registrado anteriormente', `Folio: ${data.folio || 'Desconocido'}`);
+                    return null;
+                }
+                if (r.status === 422) {
+                    mostrarPopup('error', 'Marbete Inválido', 'El código QR no contiene información fiscal válida', data.detalle || '');
+                    return null;
+                }
+                if (!r.ok) {
+                    mostrarPopup('error', 'Error', data.error || 'Error desconocido');
+                    return null;
+                }
+                return data;
+            } catch (error) {
+                console.error("Error en consulta:", error);
+                mostrarPopup('error', 'Error de conexión', 'No se pudo conectar con el servidor');
+                return null;
+            }
+        }
+
+        async function procesarQR(raw) {
+            console.log("procesarQR recibió raw:", raw);
+            const qr = normalizarQR(raw);
+            console.log("QR normalizado final:", qr);
+            try {
+                const data = await consultarSAT(qr);
+                if (!data) return;
+                records.push(data);
+                aplicarFiltros();
+                mostrarPopup('success', 'Registro Exitoso', 'Marbete guardado correctamente', `Folio: ${data.folio || 'N/A'}`);
+            } catch (e) {
+                console.error("Error en procesarQR:", e);
+            }
+        }
+
+        async function limpiarBD() {
+            if (confirm('¿Estás seguro de limpiar toda la base de datos?')) {
+                try {
+                    await fetch("http://127.0.0.1:5000/limpiar", { method: "POST" });
+                    records = [];
+                    aplicarFiltros();
+                    mostrarPopup('info', 'Base de datos limpiada', 'Todos los registros han sido eliminados');
+                } catch (error) {
+                    mostrarPopup('error', 'Error', 'No se pudo limpiar la base de datos');
+                }
+            }
+        }
+
+        // Event listeners y arranque
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById("qr-input").addEventListener("keydown", e => {
+                if (e.key === "Enter") {
+                    procesarQR(e.target.value);
+                    e.target.value = "";
+                }
+            });
+
+            document.getElementById("global-search").addEventListener("input", (e) => {
+                busquedaGlobal(e.target.value);
+            });
+
+            // ********** BOTÓN DE DESCARGA CON DISEÑO MEJORADO **********
+            document.getElementById("download-btn").onclick = () => {
+                if (filteredRecords.length === 0) {
+                    mostrarPopup('warning', 'Sin datos', 'No hay registros para descargar');
+                    return;
+                }
+
+                // Función auxiliar para formatear fecha a DD/MM
+                function formatDateToDDMM(dateStr) {
+                    if (!dateStr) return '';
+                    // dd/mm/yyyy o dd-mm-yyyy
+                    let match = dateStr.match(/^(\d{1,2})[\/-](\d{1,2})[\/-]\d{4}$/);
+                    if (match) {
+                        return `${match[1].padStart(2, '0')}/${match[2].padStart(2, '0')}`;
+                    }
+                    // yyyy-mm-dd
+                    match = dateStr.match(/^\d{4}[\/-](\d{1,2})[\/-](\d{1,2})$/);
+                    if (match) {
+                        return `${match[2].padStart(2, '0')}/${match[1].padStart(2, '0')}`;
+                    }
+                    // fallback: primeros 5 caracteres si ya tienen formato
+                    if (dateStr.length >= 5 && (dateStr[2] === '/' || dateStr[2] === '-')) {
+                        return dateStr.substring(0, 5).replace('-', '/');
+                    }
+                    return dateStr;
+                }
+
+                // Construir las filas del Excel (array de arrays simple)
+                let rows = [
+                    ["REGISTRO DE DESTRUCCIÓN DE ENVASES", "", "", ""],
+                    [],
+                    ["DATOS DEL CONTRIBUYENTE", "NOMBRE, DENOMINACIÓN RAZÓN SOCIAL", "R.F.C.", "DOMICILIO FISCAL"],
+                    ["", "", "", ""],
+                    ["DATOS DEL REPRESENTANTE LEGAL", "NOMBRE", "R.F.C.", "FIRMA"],
+                    ["", "", "", ""],
+                    ["SEMANA QUE AMPARA (DD/MM) - (DD/MM)", "AÑO", "", ""],
+                    [],
+                    ["No.", "DIA (DD/MM)", "TIPO DE BEBIDA QUE CONTENÍA EL ENVASE", "NUMERO DE FOLIO DEL MARBETE CORRESPONDIENTE*"]
+                ];
+
+                filteredRecords.forEach((rec, idx) => {
+                    let dia = formatDateToDDMM(rec.fecha_elaboracion);
+                    let bebida = rec.tipo_producto || '';
+                    let folio = rec.folio || '';
+                    rows.push([(idx + 1).toString(), dia, bebida, folio]);
+                });
+
+                // Crear la hoja de cálculo
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+
+                // Fusionar celdas del título (A1:D1)
+                if (!ws['!merges']) ws['!merges'] = [];
+                ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } });
+
+                // Fusionar celdas de "SEMANA QUE AMPARA" (A7:B7) si se desea
+                ws['!merges'].push({ s: { r: 6, c: 0 }, e: { r: 6, c: 1 } });
+
+                // Definir anchos de columna
+                ws['!cols'] = [
+                    { wch: 8 },   // No.
+                    { wch: 14 },  // DIA
+                    { wch: 45 },  // TIPO DE BEBIDA
+                    { wch: 30 }   // FOLIO
+                ];
+
+                // --- Aplicar estilos ---
+                // Función para asignar estilo a una celda
+                function styleCell(r, c, style) {
+                    const cellRef = XLSX.utils.encode_cell({ r: r, c: c });
+                    if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
+                    ws[cellRef].s = style;
+                }
+
+                // Estilo para título (fila 0, todas las columnas fusionadas)
+                styleCell(0, 0, {
+                    font: { bold: true, sz: 18 },
+                    alignment: { horizontal: 'center', vertical: 'center' }
+                });
+
+                // Estilo para los encabezados de sección (fila 2, 4, 6)
+                [2, 4, 6].forEach(row => {
+                    for (let col = 0; col < 4; col++) {
+                        styleCell(row, col, {
+                            font: { bold: true },
+                            alignment: { horizontal: 'left', vertical: 'center' }
+                        });
+                    }
+                });
+
+                // Estilo para la fila de encabezado de tabla (fila 8)
+                for (let col = 0; col < 4; col++) {
+                    styleCell(8, col, {
+                        font: { bold: true },
+                        fill: { fgColor: { rgb: "D3D3D3" } },  // gris claro
+                        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                        border: {
+                            top: { style: 'thin' },
+                            bottom: { style: 'thin' },
+                            left: { style: 'thin' },
+                            right: { style: 'thin' }
+                        }
+                    });
+                }
+
+                // Estilo para las filas de datos (desde fila 9 hasta el final)
+                for (let r = 9; r < rows.length; r++) {
+                    for (let c = 0; c < 4; c++) {
+                        styleCell(r, c, {
+                            alignment: { horizontal: c === 0 ? 'center' : 'left', vertical: 'center' },
+                            border: {
+                                top: { style: 'thin' },
+                                bottom: { style: 'thin' },
+                                left: { style: 'thin' },
+                                right: { style: 'thin' }
+                            }
+                        });
+                    }
+                }
+
+                // Crear libro y descargar
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Destrucción de Envases");
+                XLSX.writeFile(wb, "Registro_Destruccion_Envases.xlsx");
+
+                mostrarPopup('success', 'Descarga completada', `Se descargaron ${filteredRecords.length} registros con formato mejorado.`);
+            };
+
+            // Inicializar escáner
+            try {
+                const scanner = new Html5QrcodeScanner("reader", {
+                    fps: 10,
+                    qrbox: 250,
+                    rememberLastUsedCamera: true
+                });
+                scanner.render((txt) => {
+                    console.log("Escáner detectó:", txt);
+                    procesarQR(txt);
+                });
+            } catch (e) {
+                console.error("Error al inicializar escáner:", e);
+                mostrarPopup('error', 'Error de escáner', 'No se pudo inicializar la cámara');
+            }
+        });
+
+        // Cargar datos al inicio
+        cargarDesdeBD();
+    </script>
+</body>
+
+</html>
